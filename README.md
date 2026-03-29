@@ -28,9 +28,7 @@ Agen uses UTF-8 symbols, as AI will code it.
 
 ## Examples
 
-Try `npc.py` first.
-
-From `npc.agen`:
+Try `npc.py` first. From `npc.agen`:
 ```
 (npc=Ø)
     npc={name:emma, location:home}
@@ -133,4 +131,29 @@ for _ in range(step_limit):
 
         messages += [{"role": "user", "content": results}]
         phase = "model"; response = None; continue
+```
+
+## Advanced Examples
+
+Try `s03.py`. If you can understand `s03.agen`, you are thinking in Agen 😊
+```
+(messages=■, response=◆, rounds_since_todo=◀)
+    (■=Ø) ➜ ■=[{role:user, content:{query}}], phase=model, ◀=0
+
+    (phase=model)
+        (◆=Ø) ➜ ◆={QUERY(messages=■)}
+        ■+=[{role:assistant, content:{◆.content}}]
+        (◆.stop_reason=tool_use) ➜ phase=tool, i=0, results=[]
+        phase=done
+
+    (phase=tool)
+        (i≠{len(◆.content)}, ◆.content.{i}=▲, output=▼)
+            (▲.type≠tool_use) ➜ i+=1
+            (▼=Ø) ➜ ▼={DISPATCH(name={▲.name}, input={▲.input})}
+            results+=[{type:tool_result, tool_use_id:{▲.id}, content:▼}]
+            ▼=Ø, i+=1
+            (▲.name=todo) ➜ ◀=-1
+        ■+=[{role:user, content:{results}}]
+        phase=model, ◆=Ø, ◀+=1
+        (◀>=3) ➜ results.insert(0, {type:text, text:<reminder>Update your todos.</reminder>})
 ```
