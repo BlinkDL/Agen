@@ -157,3 +157,7 @@ Try `s03.py`. If you can understand `s03.agen`, you are thinking in Agen 😊
         phase=model, ◆=Ø, ◀+=1
         (◀>=3) ➜ results.insert(0, {type:text, text:<reminder>Update your todos.</reminder>})
 ```
+
+## Community
+
+https://huggingface.co/datasets/imbue2025/Agen-codes-1k
