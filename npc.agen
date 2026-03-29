@@ -1,0 +1,21 @@
+(npc=Ø)
+    npc={name:emma, location:home}
+    agenda=[wake_up, open_stall, close_stall]
+    log=[], i=0
+
+(task=Ø, i≠{len(agenda)}) ➜ task={agenda.{i}}, i+=1
+
+(npc=■, ■.location=◆, ■.name=▲)
+    (task=wake_up)
+        log+=[{time:dawn, scene:◆, text:▲ wakes up and heads for the square.}]
+        task=Ø
+
+    (task=open_stall)
+        ◆=market_square
+        log+=[{time:morning, scene:◆, text:▲ opens the stall.}]
+        task=Ø
+
+    (task=close_stall)
+        ◆=home
+        log+=[{time:dusk, scene:◆, text:▲ counts coins and walks home at dusk.}]
+        task=Ø

@@ -1,0 +1,18 @@
+(messages=■, response=◆)
+    (■=Ø) ➜ ■=[{role:user, content:{query}}], phase=model
+
+    (phase=model)
+        (◆=Ø) ➜ ◆={QUERY(messages=■)}
+        ■+=[{role:assistant, content:{◆.content}}]
+        (◆.stop_reason=tool_use) ➜ phase=tool, i=0, results=[]
+        phase=done
+
+    (phase=tool)
+        (i={len(◆.content)})
+            ■+=[{role:user, content:{results}}]
+            phase=model, ◆=Ø
+        (◆.content.{i}=▲, output=▼)
+            (▲.type≠tool_use) ➜ i+=1
+            (▼=Ø) ➜ ▼={BASH(command={▲.input.command})}
+            results+=[{type:tool_result, tool_use_id:{▲.id}, content:▼}]
+            ▼=Ø, i+=1
