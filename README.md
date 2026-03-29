@@ -4,7 +4,7 @@ Agen is a minimalist language for agent loops and state machines.
 
 ## Flow
 
-Agen programs run inside agen_loop:
+Agen is **purely state-driven** and runs inside agen_loop:
 
 Step 1: Find the first matching rule.
 - If no rule matches, run stops.
