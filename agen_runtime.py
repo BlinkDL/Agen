@@ -97,13 +97,12 @@ def _env(state: State, helpers: dict[str, object] | None = None) -> dict[str, ob
         result = _ASSIGN_SLOT(state, slot_name, value)
         sync_slot(slot_name)
         target = getattr(state, _slot_target_name(slot_name), None)
-        if isinstance(target, str):
-            try:
-                node = _parse_expr(target)
-            except SyntaxError:
-                node = None
-            if isinstance(node, ast.Name):
-                env[node.id] = getattr(state, node.id, None)
+        try:
+            node = _parse_expr(target) if isinstance(target, str) else None
+        except SyntaxError:
+            node = None
+        if isinstance(node, ast.Name):
+            env[node.id] = getattr(state, node.id, None)
         return result
 
     env.update({"_STRCAT": _STRCAT, "_DOT": _DOT, "_BIND_SLOT": bind_slot, "_ASSIGN_SLOT": assign_slot, **SAFE_BUILTINS, **helpers})
@@ -274,6 +273,8 @@ def _rewrite_dot_brace_subscript(text: str, slot_names: dict[str, str]) -> str:
             if text[i + 1] == "{":
                 end = _find_matching(text, i + 1, "{", "}")
                 return f"[({_rewrite_dsl_value_syntax(text[i + 2 : end].strip(), slot_names)})]", end + 1
+            if text[i + 1] in SLOT_SYMBOLS:
+                return f"[({_slot_name(slot_names, text[i + 1])})]", i + 2
             if text[i + 1].isdigit():
                 j = i + 1
                 while j < len(text) and text[j].isdigit(): j += 1
@@ -298,8 +299,7 @@ def _rewrite_assignment_rhs(text: str, op: str, slot_names: dict[str, str]) -> s
         return text
     if lhs.rstrip().endswith(("=", "!", "<", ">", "+", "-", "*", "/", "%")):
         return text
-    lhs = _replace_slot_symbol(_rewrite_dsl_value_syntax(lhs.strip(), slot_names), slot_names)
-    return f"{lhs} {op} {_rewrite_value_expr(rhs, slot_names)}"
+    return f"{_rewrite_assignment_lhs(lhs.strip(), slot_names)} {op} {_rewrite_value_expr(rhs, slot_names)}"
 
 def _rewrite_slot_assignment(text: str, slot_names: dict[str, str]) -> str:
     stripped = text.strip()
@@ -307,6 +307,46 @@ def _rewrite_slot_assignment(text: str, slot_names: dict[str, str]) -> str:
     if match is None:
         return text
     return f"_ASSIGN_SLOT({_slot_name(slot_names, match.group(1))!r}, {_rewrite_value_expr(match.group(2).strip(), slot_names)})"
+
+def _rewrite_assignment_lhs(text: str, slot_names: dict[str, str]) -> str:
+    return _replace_slot_symbol(_rewrite_dsl_value_syntax(text, slot_names), slot_names)
+
+def _rewrite_parallel_assignment(text: str, slot_names: dict[str, str]) -> str:
+    split = _split_top_level_once(text, "=")
+    if split is None:
+        return text
+    lhs_raw, rhs_raw = split
+    lhs_parts = [part.strip() for part in _split_top_level_commas(lhs_raw) if part.strip()]
+    rhs_parts = [part.strip() for part in _split_top_level_commas(rhs_raw) if part.strip()]
+    if len(lhs_parts) <= 1 or len(lhs_parts) != len(rhs_parts):
+        return text
+    if any(lhs.endswith(("=", "!", "<", ">", "+", "-", "*", "/", "%")) for lhs in lhs_parts):
+        return text
+    temps = [f"__tuple{i}" for i in range(len(rhs_parts))]
+    assigns = [f"{temp} = {_rewrite_value_expr(rhs, slot_names)}" for temp, rhs in zip(temps, rhs_parts)]
+    writes = []
+    for lhs, temp in zip(lhs_parts, temps):
+        if re.fullmatch(rf"[{SLOT_CLASS}]", lhs):
+            writes.append(f"_ASSIGN_SLOT({_slot_name(slot_names, lhs)!r}, {temp})")
+        else:
+            writes.append(f"{_rewrite_assignment_lhs(lhs, slot_names)} = {temp}")
+    return "; ".join(assigns + writes)
+
+def _merge_parallel_parts(parts: list[str], slot_names: dict[str, str]) -> list[str]:
+    merged: list[str] = []
+    i = 0
+    while i < len(parts):
+        best = None
+        best_end = i + 1
+        for j in range(i + 2, len(parts) + 1):
+            candidate = ",".join(part.strip() for part in parts[i:j])
+            normalized = candidate.replace("Ø", "None")
+            if _rewrite_parallel_assignment(normalized, slot_names) != normalized:
+                best = candidate
+                best_end = j
+        merged.append(best or parts[i])
+        i = best_end if best else i + 1
+    return merged
 
 def _replace_slot_symbol(text: str, slot_names: dict[str, str]) -> str:
     def replace(text: str, i: int) -> tuple[str | None, int]:
@@ -386,10 +426,14 @@ def _rewrite_dsl_value_syntax(text: str, slot_names: dict[str, str]) -> str:
 def _normalize_stmt(text: str, slot_names: dict[str, str] | None = None) -> str:
     if slot_names is None:
         slot_names = {}
-    parts = _split_top_level_commas(text.replace("Ø", "None"))
+    normalized = text.replace("Ø", "None")
+    parallel = _rewrite_parallel_assignment(normalized, slot_names)
+    if parallel != normalized:
+        return parallel
+    parts = _merge_parallel_parts(_split_top_level_commas(normalized), slot_names)
     rewritten: list[str] = []
     for part in parts:
-        raw = part.strip().replace("Ø", "None")
+        raw = part.strip()
         rewritten_stmt = _rewrite_slot_assignment(raw, slot_names)
         if rewritten_stmt == raw:
             rewritten_stmt = _rewrite_dsl_value_syntax(raw, slot_names)
@@ -405,7 +449,7 @@ def _replace_condition_equals(text: str) -> str:
     def replace(text: str, i: int) -> tuple[str | None, int]:
         prev = text[i - 1] if i > 0 else ""
         nxt = text[i + 1] if i + 1 < len(text) else ""
-        if text[i] == "=" and prev not in ("=", "!", "<", ">") and nxt != "=":
+        if text[i] == "=" and prev not in (":", "=", "!", "<", ">") and nxt != "=":
             return "==", i + 1
         return None, i
     return _rewrite_unquoted(text, replace)
@@ -612,9 +656,13 @@ def _ASSIGN_SLOT(state: State, symbol: str, value: object, helpers: dict[str, ob
 def _exec_stmt(node: ast.stmt, state: State, helpers: dict[str, object] | None = None) -> bool:
     if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id in SLOT_NAME_SET:
         symbol = node.target.id
-        if not isinstance(node.op, ast.Add):
+        if isinstance(node.op, ast.Add):
+            value = getattr(state, symbol) + _eval_expr(node.value, state, helpers)
+        elif isinstance(node.op, ast.Sub):
+            value = getattr(state, symbol) - _eval_expr(node.value, state, helpers)
+        else:
             raise NotImplementedError(f"Unsupported slot augassign op: {ast.dump(node.op)}")
-        _ASSIGN_SLOT(state, symbol, getattr(state, symbol) + _eval_expr(node.value, state, helpers), helpers)
+        _ASSIGN_SLOT(state, symbol, value, helpers)
     elif isinstance(node, (ast.Assign, ast.AugAssign)):
         _exec_module([_transform_stmt(node, state)], state, helpers)
     elif isinstance(node, ast.Expr):
