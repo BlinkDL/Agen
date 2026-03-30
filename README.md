@@ -158,6 +158,23 @@ Try `s03.py`. If you can understand `s03.agen`, you are thinking in Agen 😊
         (◀>=3) ➜ results.insert(0, {type:text, text:<reminder>Update your todos.</reminder>})
 ```
 
+From `quicksort.agen`:
+
+```
+(s=Ø) ➜ s=[[0, {len(a)-1}]]
+(phase=■, pivot=◆, lo=◀, hi=▶, i=▲, j=▼)
+    (■=i)
+        (a.▲<◆) ➜ ▲+=1
+        ■=j
+    (■=j)
+        (a.▼>◆) ➜ ▼-=1
+        (▲<▼) ➜ a.▲,a.▼={a.▼},{a.▲}, ▲+=1, ▼-=1, ■=i
+        s+=[[◀, ▼], [{▼+1}, ▶]]
+        ◀=Ø, ■=Ø
+    (◀, ◀<▶) ➜ ▲=◀, ▼=▶, ◆={a.{(▲+▼)//2}}, ■=i
+    ({len(s)}>0) ➜ [◀, ▶]={s.pop()}
+```
+
 ## Community
 
 https://huggingface.co/datasets/imbue2025/Agen-codes-1k
